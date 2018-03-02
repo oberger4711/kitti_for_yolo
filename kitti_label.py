@@ -5,6 +5,8 @@ import argparse
 import os
 import csv
 
+OUT_LABELS_DIR = "labels"
+
 KEY_PEDESTRIAN = "Pedestrian"
 KEY_CYCLIST = "Cyclist"
 KEY_CAR = "Car"
@@ -16,11 +18,14 @@ KEY_TRAM = "Tram"
 KEY_DONT_CARE = "DontCare"
 
 CLAZZ_NUMBERS = {
-        KEY_PEDESTRIAN : 0,
-        KEY_CYCLIST : 1,
-        KEY_CAR : 2
+            KEY_PEDESTRIAN : 0,
+            KEY_CYCLIST : 1,
+            KEY_CAR : 2
         }
-SORTED_KEYS = [KEY_CAR, KEY_PEDESTRIAN, KEY_CYCLIST, KEY_VAN, KEY_TRUCK, KEY_TRAM, KEY_PERSON_SITTING, KEY_MISC, KEY_DONT_CARE]
+
+def getSampleId(path):
+    basename = os.path.basename(path)
+    return os.path.splitext(basename)[0]
 
 def resolveClazzNumberOrNone(clazz):
     if clazz == KEY_CYCLIST:
@@ -56,17 +61,15 @@ def readFixedImageSize():
     # This is not exact for all images but most (and it should be faster).
     return (1242, 375)
 
-def parseSample(lbl_path, img_dir, in_out_data):
+def parseSample(lbl_path, img_path):
     with open(lbl_path) as csv_file:
         reader = csv.DictReader(csv_file, fieldnames=["type", "truncated", "occluded", "alpha", "bbox2_left", "bbox2_top", "bbox2_right", "bbox2_bottom", "bbox3_height", "bbox3_width", "bbox3_length", "bbox3_x", "bbox3_y", "bbox3_z", "bbox3_yaw", "score"], delimiter=" ")
-        sample_labels = []
+        yolo_labels = []
         for row in reader:
             clazz_number = resolveClazzNumberOrNone(row["type"])
             if clazz_number is not None:
-                lbl_file_name = os.path.basename(lbl_path)
-                lbl_file_base = os.path.splitext(lbl_file_name)[0]
-                img_path = os.path.join(img_dir, "image_2", "{}.png".format(lbl_file_base))
-                size = readRealImageSize(img_path) # Use readFixedImageSize() for hard coded size.
+                size = readRealImageSize(img_path)
+                #size = readFixedImageSize()
                 # Image coordinate is in the top left corner.
                 bbox = (
                         float(row["bbox2_left"]),
@@ -78,28 +81,48 @@ def parseSample(lbl_path, img_dir, in_out_data):
                 # Yolo expects the labels in the form:
                 # <object-class> <x> <y> <width> <height>.
                 yolo_label = (clazz_number,) + yolo_bbox
-                print(yolo_label)
-                sample_labels.append(yolo_label)
-        in_out_data[lbl_file_base] = sample_labels
+                yolo_labels.append(yolo_label)
+    return yolo_labels
 
 def parseArguments():
     parser = argparse.ArgumentParser(description="Generates labels for training darknet on KITTI.")
     parser.add_argument("label_dir", help="data_object_label_2/training/label_2 directory; can be downloaded from KITTI")
-    parser.add_argument("image_2_dir", help="data_object_image_2/training directory; can be downloaded from KITTI")
+    parser.add_argument("image_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI")
+    parser.add_argument("--training-samples", type=int, default=0.8, help="percentage of the samples to be used for training")
     args = parser.parse_args()
+    if args.training_samples < 0 or args.training_samples > 1:
+        print("Invalid argument {} for --training-samples. Expected a percentage value between 0.0 and 1.0.")
+        exit(-1)
+    return args
 
 def main():
-    parseArguments()
+    args = parseArguments()
 
-    print("Parsing data...")
-    data = {}
+    if not os.path.exists(OUT_LABELS_DIR):
+        os.makedirs(OUT_LABELS_DIR)
+
+    print("Generating darknet labels...")
+    sample_img_pathes = []
     for dir_path, sub_dirs, files in os.walk(args.label_dir):
         for file_name in files:
             if file_name.endswith(".txt"):
                 lbl_path = os.path.join(dir_path, file_name)
-                parseSample(lbl_path, args.image_2_dir, data)
+                sample_id = getSampleId(lbl_path)
+                img_path = os.path.join(args.image_2_dir, "{}.png".format(sample_id))
+                sample_img_pathes.append(img_path)
+                yolo_labels = parseSample(lbl_path, img_path)
+                with open(os.path.join(OUT_LABELS_DIR, "{}.txt".format(sample_id)), "w") as yolo_label_file:
+                    for lbl in yolo_labels:
+                        yolo_label_file.write("{} {} {} {} {}\n".format(*lbl))
 
-    print("Writing output files...")
+    print("Writing training and test sample ids...")
+    first_test_sample_index = int(args.training_samples * len(sample_img_pathes))
+    with open("kitti_train.txt", "w") as train_file:
+        for sample_index in range(first_test_sample_index):
+            train_file.write("{}\n".format(sample_img_pathes[sample_index]))
+    with open("kitti_test.txt", "w") as test_file:
+        for sample_index in range(first_test_sample_index, len(sample_img_pathes)):
+            test_file.write("{}\n".format(sample_img_pathes[sample_index]))
 
 if __name__ == "__main__":
     main()

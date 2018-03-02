@@ -1,1 +1,4 @@
 env/
+labels/
+kitti_train.txt
+kitti_test.txt
