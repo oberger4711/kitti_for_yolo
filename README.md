@@ -1,5 +1,6 @@
 # KITTI for YOLO
 This tool generates labels in YOLO format from the KITTI labels.
+The generated files can be directly used to start a Training on the KITTI data for 2D object detection.
 
 ## Setup
 Install python dependencies.
