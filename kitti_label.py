@@ -20,14 +20,15 @@ KEY_DONT_CARE = "DontCare"
 CLAZZ_NUMBERS = {
             KEY_PEDESTRIAN : 0,
             KEY_CYCLIST : 1,
-            KEY_CAR : 2
+            KEY_CAR : 2,
+            KEY_DONT_CARE : 3
         }
 
 def getSampleId(path):
     basename = os.path.basename(path)
     return os.path.splitext(basename)[0]
 
-def resolveClazzNumberOrNone(clazz):
+def resolveClazzNumberOrNone(clazz, use_dont_care):
     if clazz == KEY_CYCLIST:
         return CLAZZ_NUMBERS[KEY_CYCLIST]
     #if clazz in (KEY_PEDESTRIAN, KEY_PERSON_SITTING):
@@ -36,6 +37,8 @@ def resolveClazzNumberOrNone(clazz):
     #if clazz in (KEY_CAR, KEY_VAN):
     if clazz == KEY_CAR:
         return CLAZZ_NUMBERS[KEY_CAR]
+    if use_dont_care and clazz == KEY_DONT_CARE:
+        return CLAZZ_NUMBERS[KEY_DONT_CARE] # These should not be punished.
     return None
 
 def convertToYoloBBox(bbox, size):
@@ -61,12 +64,12 @@ def readFixedImageSize():
     # This is not exact for all images but most (and it should be faster).
     return (1242, 375)
 
-def parseSample(lbl_path, img_path):
+def parseSample(lbl_path, img_path, use_dont_care):
     with open(lbl_path) as csv_file:
         reader = csv.DictReader(csv_file, fieldnames=["type", "truncated", "occluded", "alpha", "bbox2_left", "bbox2_top", "bbox2_right", "bbox2_bottom", "bbox3_height", "bbox3_width", "bbox3_length", "bbox3_x", "bbox3_y", "bbox3_z", "bbox3_yaw", "score"], delimiter=" ")
         yolo_labels = []
         for row in reader:
-            clazz_number = resolveClazzNumberOrNone(row["type"])
+            clazz_number = resolveClazzNumberOrNone(row["type"], use_dont_care)
             if clazz_number is not None:
                 size = readRealImageSize(img_path)
                 #size = readFixedImageSize()
@@ -86,9 +89,10 @@ def parseSample(lbl_path, img_path):
 
 def parseArguments():
     parser = argparse.ArgumentParser(description="Generates labels for training darknet on KITTI.")
-    parser.add_argument("label_dir", help="data_object_label_2/training/label_2 directory; can be downloaded from KITTI")
-    parser.add_argument("image_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI")
-    parser.add_argument("--training-samples", type=int, default=0.8, help="percentage of the samples to be used for training")
+    parser.add_argument("label_dir", help="data_object_label_2/training/label_2 directory; can be downloaded from KITTI.")
+    parser.add_argument("image_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI.")
+    parser.add_argument("--training-samples", type=int, default=0.8, help="percentage of the samples to be used for training between 0.0 and 1.0.")
+    parser.add_argument("--use-dont-care", action="store_true", help="do not ignore 'DontCare' labels.")
     args = parser.parse_args()
     if args.training_samples < 0 or args.training_samples > 1:
         print("Invalid argument {} for --training-samples. Expected a percentage value between 0.0 and 1.0.")
@@ -110,7 +114,7 @@ def main():
                 sample_id = getSampleId(lbl_path)
                 img_path = os.path.join(args.image_2_dir, "{}.png".format(sample_id))
                 sample_img_pathes.append(img_path)
-                yolo_labels = parseSample(lbl_path, img_path)
+                yolo_labels = parseSample(lbl_path, img_path, args.use_dont_care)
                 with open(os.path.join(OUT_LABELS_DIR, "{}.txt".format(sample_id)), "w") as yolo_label_file:
                     for lbl in yolo_labels:
                         yolo_label_file.write("{} {} {} {} {}\n".format(*lbl))
