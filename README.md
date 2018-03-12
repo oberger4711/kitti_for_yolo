@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-Run help for how to use the script.
+Run help for how to use the script:
 ```
 python kitt_label.py --help
 ```
