@@ -16,7 +16,7 @@ pip install -r requirements.txt
 ## Usage
 Run help for how to use the script:
 ```
-python kitt_label.py --help
+python kitti_label.py --help
 ```
 After using you may want to exit the virtualenv:
 ```
